@@ -1,24 +1,20 @@
 #chia-manager-app:0.2.dev-php8.2.1
-FROM php:8.2.1-apache
+FROM php:8.2.1-fpm
 
 # Install OS dependencies required
 RUN apt-get update && apt-get upgrade -y && apt-get install curl zip libicu-dev libonig-dev libedit-dev cron npm -y
 
-# Adapt apache config
-RUN a2enmod headers proxy proxy_http proxy_fcgi rewrite actions alias
-
 # Install APCU
-RUN pecl install apcu 
+RUN pecl install apcu
 
 # Install PHP ext-gd
-# RUN docker-php-ext-install intl gd zip mysqli pdo pdo_mysql opcache
 RUN docker-php-ext-install intl mysqli pdo pdo_mysql mbstring posix sysvmsg
 # Enabled required PHP extensions
 RUN docker-php-ext-enable opcache apcu
 
 # Copy app content
 # Use the .dockerignore file to control what ends up inside the image!
-WORKDIR /var/www/html
+WORKDIR /var/www/html/
 COPY . .
 
 # Install PHP composer
@@ -37,10 +33,6 @@ RUN npm install
 # Update npm
 RUN npm update
 
-# Expose useful volumes (see documentation)
-#VOLUME /var/www/html/backend/config
-#VOLUME /var/www/html/logs
-
 # Set app owner to apache
 RUN chown www-data. /var/www/html/logs -R
 RUN chown www-data. /var/www/html/backend/config -R
@@ -50,7 +42,4 @@ ENV CM_VERSION 0.2.alpha
 ENV CM_DOCKER true
 
 # Execute app init script and start apache server
-CMD ["sh","-c","/bin/sh docker/set_svc_ip_to_hosts.sh && apache2-foreground"]
-
-# Debugging only
-RUN apt-get install dnsutils less -y
+CMD ["sh","-c","php-fpm -F -R"]

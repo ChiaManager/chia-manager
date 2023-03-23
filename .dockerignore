@@ -1,7 +1,7 @@
 kubernetes
 logs
 vendor
-backend/config/*
+backend/config/config.ini.php
 Dockerfile_App
 Dockerfile_Websocket
 package-lock.json

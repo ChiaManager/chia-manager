@@ -1,0 +1,35 @@
+#chia-manager-front:0.2.dev
+FROM ubuntu/apache2:2.4-22.04_beta
+
+# Install OS dependencies required
+RUN apt-get update && apt-get upgrade -y
+# Install apache modules
+RUN a2enmod headers proxy proxy_http proxy_fcgi rewrite actions alias http2
+
+# Adapt apache config
+COPY <<EOF /etc/apache2/sites-available/000-default.conf
+# Chia Manager PHP FPM Config
+<VirtualHost *:8080>
+    ServerAdmin webmaster@localhost
+    DocumentRoot /var/www/html
+
+    ErrorLog /dev/stderr
+    TransferLog /dev/stdout
+
+    <FilesMatch \.php$>
+        SetHandler "proxy:fcgi://localhost:9000"
+    </FilesMatch>
+</VirtualHost>
+EOF
+
+# Adapt Apache2 default config and permissions
+RUN chmod 777 /var/run/
+RUN echo "Listen 8080" > /etc/apache2/ports.conf
+RUN echo "CustomLog /dev/stdout vhost_combined" > /etc/apache2/conf-available/other-vhosts-access-log.conf
+RUN sed -i 's#${APACHE_LOG_DIR}/error.log#/dev/stderr#g' /etc/apache2/apache2.conf
+
+# Execute app init script and start apache server
+CMD ["sh","-c","apache2-foreground"]
+
+# Debugging only
+RUN apt-get install dnsutils less net-tools telnet -y

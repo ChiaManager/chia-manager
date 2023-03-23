@@ -18,7 +18,6 @@ WORKDIR /var/www/html
 COPY backend backend/
 COPY composer.json .
 COPY docker/init_cm_websocket.php docker/init_cm_websocket.php
-COPY docker/set_svc_ip_to_hosts.sh docker/set_svc_ip_to_hosts.sh
 COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
 # Create default folders
@@ -41,8 +40,8 @@ RUN chown www-data. /var/www/html/backend/config -R
 ENV CM_DOCKER true
 
 # Execute websocket init script and start websocket server
-#CMD ["sh","-c","/bin/sh docker/set_svc_ip_to_hosts.sh && sudo -u www-data php /var/www/html/backend/core/WebSocketServer/websocket.php"]
+#CMD ["sh","-c","php /var/www/html/backend/core/WebSocketServer/websocket.php"]
 
 # Only for developing
 RUN apt-get install sudo net-tools telnet less -y
-ENTRYPOINT [ "sh","-c","/bin/sh docker/set_svc_ip_to_hosts.sh && tail -f /dev/null" ]
+ENTRYPOINT [ "sh","-c","tail -f /dev/null" ]
