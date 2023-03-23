@@ -82,7 +82,7 @@
             Promise\resolve($this->server->messageFrontendClients(array("siteID" => 11), array("logsChanged" => $this->getMessagesFromFile(["fromline" => 0, "toline" => 0]))));
             $resolve(array("status" => 0, "message" => "Message has been logged on " . date("Y-m-d H:i:s") . "."));
           }, function (\Throwable $e) use(&$resolve){
-            $resolve("Message could not be logged. Logging Error: " . $e->getMessage() . ".");
+            $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
           });
         });
       };
@@ -109,10 +109,10 @@
           $file->getContents()->then(function (string $sitecodefile) use(&$sitecoderarray){
             $sitecoderarray = json_decode($sitecodefile, true);
           }, function (\Throwable $e) use(&$resolve){
-            return $resolve("Message could not be logged. Logging Error: " . $e->getMessage() . ".");
+            return $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
           });
         }, function (\Throwable $e) use(&$resolve){
-          return $resolve("Message(s) could not be loaded. Logging Error: " . $e->getMessage() . ".");
+          return $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
         });
 
         $errorarray = [];
@@ -120,10 +120,10 @@
           $file->getContents()->then(function (string $errorfile) use(&$errorarray){
             return $errorarray = json_decode($errorfile, true);
           }, function (\Throwable $e) use(&$resolve){
-            $resolve("Message could not be logged. Logging Error: " . $e->getMessage() . ".");
+            $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
           });
         }, function (\Throwable $e) use(&$resolve){
-          return $resolve("Message(s) could not be loaded. Logging Error: " . $e->getMessage() . ".");
+          return $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
         });
   
         $sitecode = $sitecoderarray[$this->callerClass];
@@ -204,7 +204,7 @@
           })->then(static function (Stat $stat) use(&$filesize){
             $filesize = $stat->size();
           }, function (\Throwable $e) use(&$resolve){
-            $resolve("Message(s) could not be loaded. Logging Error: " . $e->getMessage() . ".");
+            $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
           });
 
           Factory::create()->detect($this->logpath)->then(function (FileInterface $file) use(&$resolve, $filesize, $fromline, $toline){
@@ -242,7 +242,7 @@
                   $logs_to_return = array_merge($logs_to_return, $reversed_csv_array);
                 }
               }, function (\Throwable $e) use(&$resolve){
-                $resolve("Message could not be loaded. Logging Error: " . $e->getMessage() . ".");
+                $resolve(array("status" => 1, "message" => "Message could not be loaded. Logging Error: " . $e->getMessage() . ".", $e));
               });
                             
               if((array_key_exists($fromline, $logs_to_return) && array_key_exists($toline, $logs_to_return)) || ($current_chunk+$chunks_to_load+$removed_offset) < 0){
