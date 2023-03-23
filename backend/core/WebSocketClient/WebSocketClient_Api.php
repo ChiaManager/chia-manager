@@ -67,7 +67,9 @@
         $resolver = function (callable $resolve, callable $reject, callable $notify) use($socketaction, $data){
           $data = $this->buildCompleteRequest($socketaction, $data);
 
-          \Ratchet\Client\connect("ws://{$this->ini["local_socket_domain"]}:{$this->ini["socket_local_port"]}")->then(function($conn) use($data, &$resolve){
+          $local_socket_domain = $this->ini["local_socket_domain"];
+          $local_socket_domain = filter_var($local_socket_domain, FILTER_VALIDATE_IP) ? $local_socket_domain : gethostbyname($local_socket_domain);
+          \Ratchet\Client\connect("ws://{$local_socket_domain}:{$this->ini["socket_local_port"]}")->then(function($conn) use($data, &$resolve){
             $conn->send(json_encode($data));
             
             $conn->on('message', function($msg) use (&$resolve, $conn) {

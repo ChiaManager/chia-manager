@@ -24,11 +24,12 @@
      */
     public function __construct(){
       $config_file = __DIR__.'/../../config/config.ini.php';
-
+      
       if(file_exists($config_file)){
         $ini = parse_ini_file($config_file);
         $factory = new Factory();
-        $this->connection = $factory->createLazyConnection(rawurlencode($ini['db_user']) . ":" . rawurlencode($ini['db_password']) . "@{$ini['db_host']}/{$ini["db_name"]}");
+        $db_host = filter_var($ini['db_host'], FILTER_VALIDATE_IP) ? $ini['db_host'] : gethostbyname($ini['db_host']);
+        $this->connection = $factory->createLazyConnection(rawurlencode($ini['db_user']) . ":" . rawurlencode($ini['db_password']) . "@{$db_host}/{$ini["db_name"]}");
       }
     }
 
@@ -44,6 +45,7 @@
     {
       //TODO Adapt async for installing process
       try{
+        $db_host = filter_var($db_host, FILTER_VALIDATE_IP) ? $db_host : gethostbyname($db_host);
         $con = new \PDO("mysql:dbname={$db_name};host={$db_host}", $db_user, $db_password);
         $con->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 

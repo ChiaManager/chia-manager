@@ -147,7 +147,7 @@
             while(!$db_con_succ){
                 echo ".";
                 try{
-                    $dbh = new PDO("mysql:host=$this->db_host", $this->db_user, $this->db_user_pass);
+                    $dbh = new PDO("mysql:host=" . gethostbyname($this->db_host), $this->db_user, $this->db_user_pass);
                     $db_con_succ = true;
                     echo "\n  [SUCC]Starting migration using following parameters:";
                 }catch(\Exception $e){
@@ -178,13 +178,13 @@
         public function check_db_is_setup(){
             $install_db = true;
 
-            $dbh = new PDO("mysql:host=$this->db_host", $this->db_user, $this->db_user_pass);
+            $dbh = new PDO("mysql:host=" . gethostbyname($this->db_host), $this->db_user, $this->db_user_pass);
             $stmt = $dbh->prepare("SHOW DATABASES LIKE '$this->db_name'");
             $stmt->execute();
             $db_exists = $stmt->fetch(PDO::FETCH_ASSOC);
     
             if($db_exists){
-                $this->db_conn = new PDO("mysql:host=$this->db_host;dbname=$this->db_name", $this->db_user, $this->db_user_pass);
+                $this->db_conn = new PDO("mysql:host=" . gethostbyname($this->db_host) .";dbname=$this->db_name", $this->db_user, $this->db_user_pass);
                 $stmt = $this->db_conn->prepare("SHOW TABLES LIKE 'nodetype'");
                 $stmt->execute();
                 $table_exists = $stmt->fetch(PDO::FETCH_ASSOC);
