@@ -8,7 +8,7 @@
 
   require __DIR__ . '/../../../vendor/autoload.php';
 
-  if(exec('whoami') == "root" && !getenv("CM_DOCKER")){
+  if(exec('whoami') == "root"){
     echo "Running this script as root is not allowed.\n";
     exit();
   }
