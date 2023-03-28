@@ -111,18 +111,13 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
    * It will be checked if the client is allowed to connect and send in or query information to/from the api.
    * After that the requester gets an information via websocket and the websocket client if a user is viewing the site for which the data is meant for.
    * @param  ConnectionInterface $from    Websocket specific information about the current client connection.
-   * @param  array $msg                   The message as json which was sent in from the client.
+   * @param  string $msg                   The message as json which was sent in from the client.
    */
   public function onMessage(ConnectionInterface $from, $msg) {
     Loop::get()->addTimer(0, function() use($from, $msg){
       $data = json_decode($msg, true);
       $request_id = substr(str_shuffle(str_repeat($x='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', ceil(10/strlen($x)) )),1,10);
       echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP GENERAL: Added connection {$from->resourceId} to event loop.\n";
-
-      echo "----------------------------------";
-      echo "\nMESSAGE:\n";
-      print_r($msg);
-      echo "\n----------------------------------\n";
 
       if(is_array($data) && array_key_exists("node" , $data) && array_key_exists("request" , $data)
       && array_key_exists("data" , $data["request"]) && array_key_exists("backendInfo" , $data["request"])){
@@ -161,112 +156,119 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
               foreach(explode(",", $request_login_returned["nodeinfo"]["type"]) AS $arrkey => $type){
                 foreach(explode(",", $type) AS $arrkey => $this_type){
                   $siteID = NULL;
+
                   if(trim($this_type) == "webClient" && array_key_exists(trim($this_type), $this->subscription) &&
-                    array_key_exists($from->resourceId, $this->subscription[trim($this_type)]) && array_key_exists("siteID", $this->subscription[trim($this_type)][$from->resourceId]))
+                    array_key_exists($from->resourceId, $this->subscription[trim($this_type)]) && array_key_exists("siteID", $this->subscription[trim($this_type)][$from->resourceId])){
                     $siteID = $this->subscription[trim($this_type)][$from->resourceId]["siteID"];
-      
+                  }
+                  
+                  if(!in_array($type, ["backendClient","webClient"]) && (!array_key_exists($type, $this->subscription) || !array_key_exists($from->resourceId, $this->subscription[$type]))){
+                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Newly connected {$type} client connected.\n";
+                    //$this->subscription[$type][$from->resourceId] = $request_login_returned["nodeinfo"]["nodedata"];
+                    if(!in_array($from->resourceId, $this->connectedNodesInformed)){
+                      array_push($this->connectedNodesInformed, $from->resourceId);
+                      //Set Node to UP
+                      $set_node_up_down = Promise\resolve($requestHandler->processRequest([], ['namespace' => 'ChiaMgmt\Nodes\Nodes_Api', 'method' => 'setNodeUpDown'], ["nodeid" => $request_login_returned["nodeinfo"]["nodedata"]["nodeid"], "updown" => 1]));
+                      $set_node_up_down->then(function($set_node_up_down_returned) use($from, $request_id){
+                        $message_frontend_clients = Promise\resolve($this->messageFrontendClients([], $set_node_up_down_returned, $from->resourceId, ['namespace' => 'ChiaMgmt\Nodes\Nodes_Api'], $request_id));
+                        $message_frontend_clients->then(function($message_frontend_clients_returned) use($request_id, $from){
+                          echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Successfully sent message to client {$from->resourceId}.\n";
+                        });
+                      });
+                    }
+                  }else{
+                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Detected frontend/backend Client or existing connection.\n";
+                  }
+
                   $this->subscription[trim($this_type)][$from->resourceId] = $request_login_returned["nodeinfo"]["nodedata"];
-      
+                  
                   if(!is_null($siteID)) $this->subscription[trim($this_type)][$from->resourceId]["siteID"] = $siteID;
                 }
+              }
 
-                if($type != "backendClient" && !array_key_exists($type, $this->subscription) || !array_key_exists($from->resourceId, $this->subscription[$type])){
-                  echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Newly connected {$type} client connected.\n";
-                  if(!in_array($from->resourceId, $this->connectedNodesInformed)){
-                    array_push($this->connectedNodesInformed, $from->resourceId);
-                    //Set Node to UP
-                    $set_node_up_down = $requestHandler->processRequest([], ['namespace' => 'ChiaMgmt\Nodes\Nodes_Api', 'method' => 'setNodeUpDown'], ["nodeid" => $requesterLogin["nodeinfo"]["nodedata"]["nodeid"], "updown" => 1]); 
-                    $this->messageFrontendClients([], $set_node_up_down, $from->resourceId, ['namespace' => 'ChiaMgmt\Nodes\Nodes_Api'], $request_id);
-                  }
-                }else{
-                  echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Detected frontend/backend Client or existing connection.\n";
-                }
+              echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: New backendRequest from {$nodeInfo["nodeinfo"]["hostname"]}.\n";
+              echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Requested socketaction: {$nodeInfo["socketaction"]} from {$from->resourceId}.\n";
+              echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Transmitted data {$msg}\n";
 
-                echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: New backendRequest from {$nodeInfo["nodeinfo"]["hostname"]}.\n";
-                echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Requested socketaction: {$nodeInfo["socketaction"]} from {$from->resourceId}.\n";
-                echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_CONNECTION: Transmitted data {$msg}\n";
-
-                switch($nodeInfo["socketaction"]){
-                  case "wssonlinestatus":
-                    $this->users[$from->resourceId]->send(json_encode(array($nodeInfo["socketaction"] => array("status" => 0, "message" => "Websocket server ready to rumble.", "data" => getmypid()))));
-                    break;
-                  case "backendRequest": //Returns the requested value to all frontend Clients which are viewing a specific site
-                    if(is_array($loginData) && is_array($backendInfo) && is_array($reqData)){
-                      $this_req = Promise\resolve($requestHandler->processRequest($loginData, $backendInfo, $reqData, $this));
-                      $this_req->then(function($this_req_returned) use($loginData, $from, $backendInfo, $request_id){
-                        $message_frontend_clients = Promise\resolve($this->messageFrontendClients($loginData, $this_req_returned, $from->resourceId, $backendInfo, $request_id));
-                        $message_frontend_clients->then(function($message_frontend_clients_returned) use($request_id, $from){
-                          echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_PROCESSING: Successfully sent message to client {$from->resourceId}.\n";
-                        });
-                      });
-                    }else{
-                      $this->users[$from->resourceId]->send(json_encode(array($backendInfo['method'] => array("status" => 1, "message" => "One of the required arrays has a wrong datatype."))));
-                    }
-                    break;
-                  case "ownRequest": //Returns the requested value just to the requesters open socket
-                    if(is_array($loginData) && is_array($backendInfo) && is_array($reqData)){
-                      $this_req = Promise\resolve($requestHandler->processRequest($loginData, $backendInfo, $reqData, $this));
-                      $this_req->then(function($this_req_returned) use($from, $request_id){
-                        $this->users[$from->resourceId]->send(json_encode($this_req_returned));
+              switch($nodeInfo["socketaction"]){
+                case "wssonlinestatus":
+                  $this->users[$from->resourceId]->send(json_encode(array($nodeInfo["socketaction"] => array("status" => 0, "message" => "Websocket server ready to rumble.", "data" => getmypid()))));
+                  break;
+                case "backendRequest": //Returns the requested value to all frontend Clients which are viewing a specific site
+                  if(is_array($loginData) && is_array($backendInfo) && is_array($reqData)){
+                    $this_req = Promise\resolve($requestHandler->processRequest($loginData, $backendInfo, $reqData, $this));
+                    $this_req->then(function($this_req_returned) use($loginData, $from, $backendInfo, $request_id){
+                      $message_frontend_clients = Promise\resolve($this->messageFrontendClients($loginData, $this_req_returned, $from->resourceId, $backendInfo, $request_id));
+                      $message_frontend_clients->then(function($message_frontend_clients_returned) use($request_id, $from){
                         echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_PROCESSING: Successfully sent message to client {$from->resourceId}.\n";
                       });
-                    }else{
-                      $this->users[$from->resourceId]->send(json_encode(array($backendInfo['method'] => array("status" => 1, "message" => "One of the required arrays has a wrong datatype."))));
+                    });
+                  }else{
+                    $this->users[$from->resourceId]->send(json_encode(array($backendInfo['method'] => array("status" => 1, "message" => "One of the required arrays has a wrong datatype."))));
+                  }
+                  break;
+                case "ownRequest": //Returns the requested value just to the requesters open socket
+                  if(is_array($loginData) && is_array($backendInfo) && is_array($reqData)){
+                    $this_req = Promise\resolve($requestHandler->processRequest($loginData, $backendInfo, $reqData, $this));
+                    $this_req->then(function($this_req_returned) use($from, $request_id){
+                      $this->users[$from->resourceId]->send(json_encode($this_req_returned));
+                      echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_PROCESSING: Successfully sent message to client {$from->resourceId}.\n";
+                    });
+                  }else{
+                    $this->users[$from->resourceId]->send(json_encode(array($backendInfo['method'] => array("status" => 1, "message" => "One of the required arrays has a wrong datatype."))));
+                  }
+                  break;
+                case "updateFrontendViewingSite": //Updates the viewing site for a user connected to a web client
+                  $this_req = Promise\resolve($requestHandler->processUpdateFrontendViewingSite($loginData, $this->subscription, $reqData, $from->resourceId));
+                  $this_req->then(function($this_req_returned) use($from, $request_id){
+                    if(array_key_exists("data", $this_req_returned["updateFrontendViewingSite"])){
+                      $this->subscription = $this_req_returned["updateFrontendViewingSite"]["data"];
+                      unset($this_req_returned["updateFrontendViewingSite"]["data"]);
                     }
-                    break;
-                  case "updateFrontendViewingSite": //Updates the viewing site for a user connected to a web client
-                    $this_req = Promise\resolve($requestHandler->processUpdateFrontendViewingSite($loginData, $this->subscription, $reqData, $from->resourceId));
-                    $this_req->then(function($this_req_returned) use($from, $request_id){
-                      if(array_key_exists("data", $this_req_returned["updateFrontendViewingSite"])){
-                        $this->subscription = $this_req_returned["updateFrontendViewingSite"]["data"];
-                        unset($this_req_returned["updateFrontendViewingSite"]["data"]);
-                      }
-                      $this->users[$from->resourceId]->send(json_encode($this_req_returned));
-                      echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_PROCESSING: Successfully set frontend viewing site for {$from->resourceId}.\n";
-                    });
-                    break;
-                  case "getActiveSubscriptions": //Returns the current subscriptions for all connected WS Nodes
-                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_SUB: Querying active subscriptions.\n";
-                    $this_req = Promise\resolve($requestHandler->processGetActiveSubscriptions($loginData, $this->subscription));
-                    $this_req->then(function($this_req_returned) use($from, $request_id){
-                      $this->users[$from->resourceId]->send(json_encode($this_req_returned));
-                      echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_SUB: Processed and returned active subscriptions.\n";
-                    });
-                    break;
-                  case "getActiveRequests": //Returns the current subscriptions for all connected WS Nodes
-                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_REQ: Querying active requests.\n";
-                    $this_req = Promise\resolve($requestHandler->processGetActiveRequests($loginData, $this->requests));
-                    $this_req->then(function($this_req_returned) use($from, $request_id){
-                      $this->users[$from->resourceId]->send(json_encode($this_req_returned));
-                      echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_SUB: Processed and returned active requests.\n";
-                    });
-                    break;
-                  case "queryCronData":
-                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: Querying cron data.\n";
-                    if(is_array($loginData) && is_array($backendInfo) && is_array($reqData)){
-                      $this_req = Promise\resolve($requestHandler->processCronRequest($loginData, $backendInfo, $reqData, $nodeInfo, $this));
-                      $this_req->then(function($this_req_returned) use($from, $request_id, $backendInfo){
-                        $message_frontend_clients = Promise\resolve($this->messageFrontendClients(array("siteID" => 3), $this_req_returned, NULL, NULL, $request_id));
-                        $message_frontend_clients->then(function($message_frontend_clients_returned) use($request_id, $from, $this_req_returned){
-                          echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: Successfully sent message to frontend clients." . json_encode($this_req_returned) . ". \n";
-                        });
-
-                        if($this_req_returned["cronJobExecution"]["status"] == 0){
-                          echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: Cronjob execution finished. It took {$this_req_returned["cronJobExecution"]["data"]["duration"]} seconds.\n";
-                        }else{
-                          echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: {$this_req_returned["cronJobExecution"]["message"]}\n";
-                        }
+                    $this->users[$from->resourceId]->send(json_encode($this_req_returned));
+                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CLIENT_PROCESSING: Successfully set frontend viewing site for {$from->resourceId}.\n";
+                  });
+                  break;
+                case "getActiveSubscriptions": //Returns the current subscriptions for all connected WS Nodes
+                  echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_SUB: Querying active subscriptions.\n";
+                  $this_req = Promise\resolve($requestHandler->processGetActiveSubscriptions($loginData, $this->subscription));
+                  $this_req->then(function($this_req_returned) use($from, $request_id){
+                    $this->users[$from->resourceId]->send(json_encode($this_req_returned));
+                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_SUB: Processed and returned active subscriptions.\n";
+                  });
+                  break;
+                case "getActiveRequests": //Returns the current subscriptions for all connected WS Nodes
+                  echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_REQ: Querying active requests.\n";
+                  $this_req = Promise\resolve($requestHandler->processGetActiveRequests($loginData, $this->requests));
+                  $this_req->then(function($this_req_returned) use($from, $request_id){
+                    $this->users[$from->resourceId]->send(json_encode($this_req_returned));
+                    echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP ACT_SUB: Processed and returned active requests.\n";
+                  });
+                  break;
+                case "queryCronData":
+                  echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: Querying cron data.\n";
+                  if(is_array($loginData) && is_array($backendInfo) && is_array($reqData)){
+                    $this_req = Promise\resolve($requestHandler->processCronRequest($loginData, $backendInfo, $reqData, $nodeInfo, $this));
+                    $this_req->then(function($this_req_returned) use($from, $request_id, $backendInfo){
+                      $message_frontend_clients = Promise\resolve($this->messageFrontendClients(array("siteID" => 3), $this_req_returned, NULL, NULL, $request_id));
+                      $message_frontend_clients->then(function($message_frontend_clients_returned) use($request_id, $from, $this_req_returned){
+                        echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: Successfully sent message to frontend clients." . json_encode($this_req_returned) . ". \n";
                       });
 
-                      $this->users[$from->resourceId]->send(json_encode(array("cronJobExecution" => array("status" => 0, "message" => "Successfully queried system background jobs. They will be processed soon.", "data" => date("Y-m-d H:i:s")))));
-                    }else{
-                      $this->users[$from->resourceId]->send(json_encode(array($backendInfo['method'] => array("status" => 1, "message" => "One of the required arrays has a wrong datatype."))));
-                    }
-                    break;
-                  default:
-                    $this->users[$from->resourceId]->send(json_encode(array("status" => 1, "message" => "Socketaction " . $nodeInfo["socketaction"] . " not known.")));
-        
-                }
+                      if($this_req_returned["cronJobExecution"]["status"] == 0){
+                        echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: Cronjob execution finished. It took {$this_req_returned["cronJobExecution"]["data"]["duration"]} seconds.\n";
+                      }else{
+                        echo "[{$this->getDate()}] [{$request_id}] INFO EVENTLOOP CRON_PROCESSING: {$this_req_returned["cronJobExecution"]["message"]}\n";
+                      }
+                    });
+
+                    $this->users[$from->resourceId]->send(json_encode(array("cronJobExecution" => array("status" => 0, "message" => "Successfully queried system background jobs. They will be processed soon.", "data" => date("Y-m-d H:i:s")))));
+                  }else{
+                    $this->users[$from->resourceId]->send(json_encode(array($backendInfo['method'] => array("status" => 1, "message" => "One of the required arrays has a wrong datatype."))));
+                  }
+                  break;
+                default:
+                  $this->users[$from->resourceId]->send(json_encode(array("status" => 1, "message" => "Socketaction " . $nodeInfo["socketaction"] . " not known.")));
               }
             }else{
               $this->users[$from->resourceId]->send(json_encode(array("loginStatus" => $request_login_returned)));
@@ -317,13 +319,12 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
         foreach($this->subscription AS $type => $connections){
           foreach($connections AS $conid => $values){
             if($conid == $conn->resourceId){
-              if(!$changed) {
-                //Set Node to DOWN
+              if(!$changed && !in_array($type, ["webClient","backendClient"])) {
                 $set_node_up_down = Promise\resolve((new RequestHandler_Api())->processRequest([], ['namespace' => 'ChiaMgmt\Nodes\Nodes_Api', 'method' => 'setNodeUpDown'], ["nodeid" => $this->subscription[$type][$conid]["nodeid"], "updown" => 0])); 
-                $set_node_up_down->then(function($set_node_up_down_returned, $conn){
+                $set_node_up_down->then(function($set_node_up_down_returned) use($conn){
                   $message_frontend_clients = Promise\resolve($this->messageFrontendClients([], $set_node_up_down_returned, $conn->resourceId, ['namespace' => 'ChiaMgmt\Nodes\Nodes_Api']));
-                  $message_frontend_clients->then(function($request_id, $message_frontend_clients_returned){
-                    echo "[{$this->getDate()}] [----------] INFO SERVER CLIENT_CLOSED_CONN: Successfully sent message to client {$conid}\n";
+                  $message_frontend_clients->then(function($message_frontend_clients_returned) use($conn){
+                    echo "[{$this->getDate()}] [----------] INFO SERVER CLIENT_CLOSED_CONN: Successfully sent message to client {$conn->resourceId}\n";
                   });
                 });
               }          
@@ -343,6 +344,12 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
         $message = "Backendconnection {$conn->resourceId} has disconnected.\n";
       }
     };
+
+    $canceller = function () {
+      throw new \Exception('Promise cancelled');
+    };
+
+    return new Promise\Promise($resolver, $canceller);
   }
 
   /**
@@ -352,7 +359,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
    */
   public function onError(ConnectionInterface $conn, \Exception $e) {
       echo "[{$this->getDate()}] [----------] CRITICAL SERVER: An error has occurred: {$e->getMessage()}.\n";
-      (new Logging_Api($this, $this))->getErrormessage("onError", "001", $e->getMessage());
+      Promise\resolve((new Logging_Api($this, $this))->getErrormessage("onError", "001", $e->getMessage()));
       //Do not close the connection to client on exception, only log.
       //$conn->close();
   }
@@ -364,7 +371,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
    */
   public function getActiveSubscriptions(array $loginData): object
   {
-    return (new RequestHandler_Api())->processGetActiveSubscriptions($loginData, $this->subscription);
+    return Promise\resolve((new RequestHandler_Api())->processGetActiveSubscriptions($loginData, $this->subscription));
   }
 
   /**
@@ -383,7 +390,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
    * @param  int $mycon           The connection ID of the sending client to be able to send back an info.
    * @param  array $backendInfo   The backend related information for data processing like namespace- and functionname.
    */
-  public function messageFrontendClients(array $loginData, array $datatosend, int $mycon = NULL, array $backendInfo = NULL, string $reqID = "----------"): object{
+  public function messageFrontendClients(array $loginData, array $datatosend = [], int $mycon = NULL, array $backendInfo = NULL, string $reqID = "----------"): object{
     $resolver = function (callable $resolve, callable $reject, callable $notify) use($loginData, $datatosend, $mycon, $backendInfo, $reqID){
       echo "[{$this->getDate()}] [----------] INFO SERVER MSG_CLIENTS: Got command message frontend clients " . json_encode($datatosend) . "\n";
 
@@ -466,7 +473,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
 
         $informedcount = count($alreadyinformed);
         if($informedcount > 0){
-          return array("messageSpecificNode" => array("status" => 0, "message" => "Successfully queryied cron request to {$informedcount} node(s)."));
+          $resolve(array("messageSpecificNode" => array("status" => 0, "message" => "Successfully queryied cron request to {$informedcount} node(s).")));
         }else{
           $errormessage = Promise\resolve((new Logging_Api($this, $this))->getErrormessage("messageSpecificNode", "001"));
           $errormessage->then(function($errormessage_returned) use(&$resolve, $alreadyinformed){
@@ -482,7 +489,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
     };
 
     $canceller = function () {
-      throw new Exception('Promise cancelled');
+      throw new \Exception('Promise cancelled');
     };
 
     return new Promise\Promise($resolver, $canceller);
@@ -534,7 +541,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
     };
 
     $canceller = function () {
-      throw new Exception('Promise cancelled');
+      throw new \Exception('Promise cancelled');
     };
 
     return new Promise\Promise($resolver, $canceller);
@@ -556,7 +563,7 @@ class ChiaWebSocketServerNew implements MessageComponentInterface {
     };
 
     $canceller = function () {
-      throw new Exception('Promise cancelled');
+      throw new \Exception('Promise cancelled');
     };
 
     return new Promise\Promise($resolver, $canceller);
