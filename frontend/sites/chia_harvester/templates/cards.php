@@ -31,6 +31,9 @@
     }else{
       $harvesterdata = [];
     }
+
+    //Cancel further execution, because this node seems not to have any data available
+    if(!array_key_exists("hostname", $harvesterdata)) exit();
   
     $nodeid = $_GET["nodeid"];
   
