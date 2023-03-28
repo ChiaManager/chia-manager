@@ -520,8 +520,6 @@
           $function_call = Promise\resolve((new WebSocket_Api())->sendToWSS($callfunction, $querydata));
         }
 
-        print_r($function_call);
-
         $function_call->then(function($function_call_returned) use(&$resolve){
           $resolve($function_call_returned);
         });
@@ -563,8 +561,6 @@
             array_push($statement_array, $data["service_target"]);
           }
         }
-
-        if($data["node_id"] == 55 and $data["service_type_id"] == 1) print_r($data);
 
         $available_services = Promise\resolve((new DB_Api())->execute("SELECT cias.id, cias.curr_service_insert_id, cias.service_target ,cias.service_type, cias.refers_to_rule_id, ar.rule_target, ar.warn_at_after, ar.crit_at_after, cias.service_state, cias.time_or_usage, cias.node_id, ar.monitor, cias.service_state_first_reported, cias.service_state_last_reported
                                                                         FROM chia_infra_available_services cias 
@@ -615,12 +611,8 @@
       $resolver = function (callable $resolve, callable $reject, callable $notify) use($data){       
         if(array_key_exists("node_id", $data) && array_key_exists("service_type_id", $data) && array_key_exists("service_insert_id", $data) && 
         array_key_exists("defined_maximum", $data) && array_key_exists("current_service_level", $data) && 
-        ($data["service_type_id"] == 9 && array_key_exists("service_target", $data)) || $data["service_type_id"] < 9){
+        ($data["service_type_id"] == 9 && array_key_exists("service_target", $data)) || $data["service_type_id"] < 9){        
 
-          echo "====================================================\n";
-          echo "updateAvailableServices\n";
-          echo "====================================================\n";
-                    
           $nodeid = $data["node_id"];
           $this_service_type_id = $data["service_type_id"];
           $this_service_target = (array_key_exists("service_target", $data) && !is_null($data["service_target"]) ? $data["service_target"] : NULL);
@@ -668,10 +660,6 @@
                   $insert_new = true;
                   $set_current = "";
                 }
-
-                echo "UPDATE chia_infra_available_services SET curr_service_insert_id = ?, time_or_usage = ?{$set_current} , service_state_last_reported = NOW() WHERE id = ?\n";
-                print_r(array($service_insert_id, intval($current_service_alerting_level["time_or_usage"]), $target_avail_serv_id));
-                echo "\n";
                
                 $update_service = Promise\resolve((new DB_Api())->execute("UPDATE chia_infra_available_services SET curr_service_insert_id = ?, time_or_usage = ?{$set_current} , service_state_last_reported = NOW() WHERE id = ?",
                                                   array($service_insert_id, intval($current_service_alerting_level["time_or_usage"]), $target_avail_serv_id)));
@@ -682,8 +670,6 @@
               }else{
                 $insert_new = true;
               }
-
-              echo ($insert_new ? "INSERT NEW nodeID: $nodeid\n" : "DONT INSERT NEW nodeID: $nodeid\n");
 
               if($insert_new){               
                 $insert_new = Promise\resolve((new DB_Api())->execute("INSERT INTO chia_infra_available_services (id, curr_service_insert_id, service_target, service_type, refers_to_rule_id, service_state, time_or_usage, node_id, current, service_state_first_reported, service_state_last_reported) VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())", 
@@ -739,6 +725,8 @@
               "current_service_minutes" => $node_up_down_since
             ];
 
+            Promise\resolve($this->updateAvailableServices($updateData));
+
             foreach($services_data["services"] AS $service_id => $node_service_state){
               $service_up_down_since = (strtotime($node_service_state["service_lastreported"]) - strtotime($node_service_state["service_firstreported"])) / 60;
               
@@ -756,7 +744,7 @@
             }
           }
 
-          $resolve(array("status" => 0, "message" => "Successfully set all nodes system and service status."));
+          $resolve(array("status" => 0, "message" => "Successfully set all nodes system and service status for node."));
         });
       };
 
