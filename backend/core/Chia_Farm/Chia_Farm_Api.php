@@ -7,12 +7,13 @@
   use ChiaMgmt\Encryption\Encryption_Api;
   use ChiaMgmt\Chia_Farm\Data_Objects\Farmdata;
   use ChiaMgmt\Chia_Farm\Data_Objects\SignagePointsData;
+  use ChiaMgmt\WebSocket\WebSocket_Api;
 
   /**
    * The Chia_Farm_Api class contains every needed methods to manage all available farming data.
    * This class is used by the client to send in data and from the webclient to get data.
    * The client can also be managed via this class.
-   * @version 0.1.1
+   * @version 0.2.1
    * @author OLED1 - Oliver Edtmair
    * @since 0.1.0
    * @copyright Copyright (c) 2021, Oliver Edtmair (OLED1), Luca Austelat (lucaust)
@@ -62,36 +63,51 @@
      * @see https://files.chiamgmt.edtmair.at/docs/classes/ChiaMgmt-Encryption-Encryption-Api.html#method_encryptString
      * @param  array  $data       {"farm": {"farming_status": "Not available", "plot_count_for_all_harvesters": "0", "total_size_of_plots": "0.000 MiB", "estimated_network_space": "Unknown", "expected_time_to_win": "Never (no plots)", "challenges": []}}
      * @param  array  $loginData  {"logindata": {"authhash": "[authhash]"}
-     * @return array              {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data": {"nodeid": [nodeid], "data": {[newly added farm data]}}
+     * @return object              {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data": {"nodeid": [nodeid], "data": {[newly added farm data]}}
      */
-    public function updateFarmData(array $data, array $loginData): array
+    public function updateFarmData(array $data, array $loginData): object
     {
-      try{
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($data, $loginData){
         $formatted_data = new Farmdata($data);
+        $node_id = Promise\resolve((new DB_Api())->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"]))));
+        $node_id->then(function($node_id_returned) use(&$resolve, $formatted_data, $data, $loginData){
+          $nodeid = $node_id_returned->resultRows[0]["id"];
 
-        $sql = $this->db_api->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"])));
-        $nodeid = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/[0]["id"];
+          $chia_farm_count = Promise\resolve((new DB_Api())->execute("SELECT Count(*) as count FROM chia_farm WHERE nodeid = ?", array($nodeid)));
+          $chia_farm_count->then(function($chia_farm_count_returned) use(&$resolve, $nodeid, $formatted_data, $data, $loginData){
+            $count = $chia_farm_count_returned->resultRows[0]["count"];
 
-        $sql = $this->db_api->execute("SELECT Count(*) as count FROM chia_farm WHERE nodeid = ?", array($nodeid));
-        $count = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/[0]["count"];
+            if($count == 0){
+              $insert_update_promsise =  Promise\resolve((new DB_Api())->execute("INSERT INTO chia_farm (id, nodeid, syncstatus, total_chia_farmed, user_transaction_fees, block_rewards, last_height_farmed, plot_count, total_size_of_plots, estimated_network_space, expected_time_to_win, querydate) VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp())",
+                    array($nodeid, $formatted_data->get_farming_status(), $formatted_data->get_total_chia_farmed(), $formatted_data->get_user_transaction_fees(), 
+                    $formatted_data->get_block_rewards(), $formatted_data->get_last_height_farmed(), $formatted_data->get_plot_count(), $formatted_data->get_total_size_of_plots(), 
+                    $formatted_data->get_estimated_network_space(), $formatted_data->get_expected_time_to_win())));
+            }else{
+              $insert_update_promsise = $this->db_api->execute("UPDATE chia_farm SET syncstatus = ?, total_chia_farmed = ?, user_transaction_fees = ?, block_rewards = ?, last_height_farmed = ?, plot_count = ?, total_size_of_plots = ?, estimated_network_space = ?, expected_time_to_win = ?, querydate = current_timestamp() WHERE nodeid = ?",
+                    array($formatted_data->get_farming_status(), $formatted_data->get_total_chia_farmed(), $formatted_data->get_user_transaction_fees(), 
+                    $formatted_data->get_block_rewards(), $formatted_data->get_last_height_farmed(), $formatted_data->get_plot_count(), $formatted_data->get_total_size_of_plots(), 
+                    $formatted_data->get_estimated_network_space(), $formatted_data->get_expected_time_to_win(), $nodeid));
+            }
 
-        if($count == 0){
-          $sql = $this->db_api->execute("INSERT INTO chia_farm (id, nodeid, syncstatus, total_chia_farmed, user_transaction_fees, block_rewards, last_height_farmed, plot_count, total_size_of_plots, estimated_network_space, expected_time_to_win, querydate) VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp())",
-          array($nodeid, $formatted_data->get_farming_status(), $formatted_data->get_total_chia_farmed(), $formatted_data->get_user_transaction_fees(), 
-                $formatted_data->get_block_rewards(), $formatted_data->get_last_height_farmed(), $formatted_data->get_plot_count(), $formatted_data->get_total_size_of_plots(), 
-                $formatted_data->get_estimated_network_space(), $formatted_data->get_expected_time_to_win()));
-        }else{
-          $sql = $this->db_api->execute("UPDATE chia_farm SET syncstatus = ?, total_chia_farmed = ?, user_transaction_fees = ?, block_rewards = ?, last_height_farmed = ?, plot_count = ?, total_size_of_plots = ?, estimated_network_space = ?, expected_time_to_win = ?, querydate = current_timestamp() WHERE nodeid = ?",
-          array($formatted_data->get_farming_status(), $formatted_data->get_total_chia_farmed(), $formatted_data->get_user_transaction_fees(), 
-                $formatted_data->get_block_rewards(), $formatted_data->get_last_height_farmed(), $formatted_data->get_plot_count(), $formatted_data->get_total_size_of_plots(), 
-                $formatted_data->get_estimated_network_space(), $formatted_data->get_expected_time_to_win(), $nodeid));
-        }
+            $insert_update_promsise->then(function($insert_update_promsise_returned) use(&$resolve, $data, $loginData, $nodeid){
+              Promise\resolve($this->updateChallenges($data["signage_points"], $loginData));
+              $resolve(array("status" => 0, "message" => "Successfully updated farm information for node $nodeid.", "data" => ["nodeid" => $nodeid]));
+            })->otherwise(function (\Exception $e) use(&$resolve){
+              $resolve($this->logging_api->getErrormessage("updateFarmData", "001", $e));
+            });
+          })->otherwise(function (\Exception $e) use(&$resolve){
+            $resolve($this->logging_api->getErrormessage("updateFarmData", "002", $e));
+          });
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("updateFarmData", "003", $e));
+        });
+      };
 
-        $this->updateChallenges($data["signage_points"], $loginData);
-        return array("status" => 0, "message" => "Successfully updated farm information for node $nodeid.", "data" => ["nodeid" => $nodeid]);
-      }catch(\Exception $e){
-        return $this->logging_api->getErrormessage("002", $e);
-      }
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
     }
 
     /**
@@ -175,7 +191,6 @@
         if(!is_null($server)){
           $function_call = Promise\resolve($server->$callfunction($querydata));
         }else{
-          $websocket_api = new WebSocket_Api();
           $function_call = Promise\resolve((new WebSocket_Api())->sendToWSS($callfunction, $querydata));
         }
 
@@ -215,7 +230,7 @@
           if(!is_null($server)){
             $function_call = Promise\resolve($server->messageSpecificNode($querydata));
           }else{
-            $function_call = Pormise\resolve((new WebSocket_Api())->sendToWSS("messageSpecificNode", $querydata));
+            $function_call = Promise\resolve((new WebSocket_Api())->sendToWSS("messageSpecificNode", $querydata));
           }
 
           $function_call->then(function($function_calls_returned) use(&$resolve){
@@ -240,19 +255,25 @@
      * @see https://files.chiamgmt.edtmair.at/docs/classes/ChiaMgmt-Encryption-Encryption-Api.html#method_encryptString
      * @param  array $data      { "status": [0 = Success, 1 = Failed], "message": [Specific message about service restart for the WebGUI] }
      * @param  array $loginData { authhash: [Querying Node's Authhash] }
-     * @return array            Returns {"status": [0|>0], "message": [Status message], "data": { "status": [0 = Success, 1 = Failed], "message": [Specific message about service restart for the WebGUI], nodeid: [Querying Node's ID] }}
+     * @return object            Returns {"status": [0|>0], "message": [Status message], "data": { "status": [0 = Success, 1 = Failed], "message": [Specific message about service restart for the WebGUI], nodeid: [Querying Node's ID] }}
      */
-    public function farmerServiceRestart(array $data = NULL, array $loginData = NULL): array
+    public function farmerServiceRestart(array $data = NULL, array $loginData = NULL): object
     {
-      try{
-        $sql = $this->db_api->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"])));
-        $nodeid = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/[0]["id"];
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($loginData){
+        $node_id = Promise\resolve((new DB_Api())->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"]))));
+        $node_id->then(function($node_id_returned) use(&$resolve){
+          $nodeid = $node_id_returned->resultRows[0]["id"];
+          $resolve(array("status" => 0, "message" => "Successfully queried farmer service restart for node $nodeid.", "data" => $nodeid));
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("farmerServiceRestart", "001", $e));
+        });
+      };
 
-        $data["data"] = $nodeid;
-        return array("status" =>0, "message" => "Successfully queried farmer service restart for node $nodeid.", "data" => $data);
-      }catch(\Exception $e){
-        return $this->logging_api->getErrormessage("001", $e);
-      }
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
     }
 
     /**
@@ -264,26 +285,36 @@
      */
     public function updateChallenges(array $data = NULL, array $loginData = NULL): array
     {
-      try{
-        $sql = $this->db_api->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"])));
-        $nodeid = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/[0]["id"];
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($data, $loginData){
+        $node_id = Promise\resolve((new DB_Api())->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"]))));
+        $node_id->then(function($node_id_returned) use(&$resolve, $data){
+          $nodeid = $node_id_returned->resultRows[0]["id"];
+          if(is_numeric($nodeid) && $nodeid > 0){
+            $sql_promises = [];
+            foreach($data AS $arrkey => $this_signage_point){
+              $this_signage_point_formatted = new SignagePointsData($this_signage_point);
+              array_push($sql_promises, Promise\resolve((new DB_Api())->execute("INSERT INTO chia_farm_challenges (id,nodeid,date,challenge_chain_sp,challenge_hash,difficulty,reward_chain_sp,signage_point_index,sub_slot_iters) VALUES (NULL, ?, current_timestamp(), ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE date = current_timestamp()", [$nodeid, $this_signage_point_formatted->get_challenge_chain_sp(), $this_signage_point_formatted->get_challenge_hash(), $this_signage_point_formatted->get_difficulty(), 
+                          $this_signage_point_formatted->get_reward_chain_sp(), $this_signage_point_formatted->get_signage_point_index(), $this_signage_point_formatted->get_sub_slot_iters()])));
+            }
 
-        if(is_numeric($nodeid) && $nodeid > 0){
-          $valuesstring = "";
-          $valuesarray = [];
-          foreach($data AS $arrkey => $this_signage_point){
-            $this_signage_point_formatted = new SignagePointsData($this_signage_point);
-            $sql = $this->db_api->execute("INSERT INTO chia_farm_challenges (id,nodeid,date,challenge_chain_sp,challenge_hash,difficulty,reward_chain_sp,signage_point_index,sub_slot_iters) VALUES (NULL, ?, current_timestamp(), ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE date = current_timestamp()", [$nodeid, $this_signage_point_formatted->get_challenge_chain_sp(), $this_signage_point_formatted->get_challenge_hash(), $this_signage_point_formatted->get_difficulty(), 
-            $this_signage_point_formatted->get_reward_chain_sp(), $this_signage_point_formatted->get_signage_point_index(), $this_signage_point_formatted->get_sub_slot_iters()]);
+            Promise\all($sql_promises)->then(function($sql_promises_returned) use(&$resolve){
+              $resolve(array("status" => 0, "message" => "Successfully updated challenges information."));
+            })->otherwise(function (\Exception $e) use(&$resolve){
+              $resolve($this->logging_api->getErrormessage("updateChallenges", "001", $e));
+            });
+          }else{
+            $resolve($this->logging_api->getErrormessage("updateChallenges", "002"));
           }
-   
-          return array("status" => 0, "message" => "Successfully updated challenges information.");
-        }else{
-          return $this->logging_api->getErrormessage("001");
-        }
-      }catch(\Exception $e){
-        return $this->logging_api->getErrormessage("002", $e);
-      }
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("updateChallenges", "003", $e));
+        });
+      };
+
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
     }
 
     /**

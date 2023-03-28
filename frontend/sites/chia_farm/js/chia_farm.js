@@ -20,6 +20,7 @@ function initRefreshFarmInfos(){
   $(".refreshFarmInfo").on("click", function(e){
     e.preventDefault();
     queryFarmData($(this).attr("data-node-id"));
+    queryFarmStatus($(this).attr("data-node-id"));
   });
 }
 
@@ -64,7 +65,7 @@ function queryFarmStatus(nodeid){
     {"nodeid" : nodeid, "nodeauthhash" : chiaFarmData[nodeid]["nodeauthhash"]}
   ];
 
-  sendToWSS("ownRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "getCurrentChiaNodesUPAndServiceStatus", data);
+  sendToWSS("ownRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "queryNodesServicesStatus", data);
 }
 
 function setServiceBadge(){

@@ -9,8 +9,9 @@
   },
   "errormessages" : {
     "updateFarmData" : {
-      "001" : [1, "Not all data stated."],
-      "002" : [2, "An error occured."]
+      "001" : [2, "An error occured."],
+      "002" : [2, "An error occured."],
+      "003" : [2, "An error occured."]
     },
     "getFarmData" : {
       "001" : [2, "An error occured."]
@@ -22,8 +23,9 @@
       "001" : [2, "An error occured."]
     },
     "updateChallenges" : {
-      "001" : [2, "Found nodeid not valid."],
-      "002" : [2, "An error occured."]
+      "001" : [2, "An error occured."],
+      "002" : [2, "Found nodeid not valid."],
+      "003" : [2, "An error occured."]
     },
     "getAllChallenges" : {
       "001" : [2, "An error occured."]

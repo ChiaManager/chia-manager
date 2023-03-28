@@ -247,8 +247,9 @@ function messagesTrigger(data){
 
   if(data[key]["status"] == 0){
     if(key == "updateWalletData"){
-      var nodeid = data[key]["data"]["nodeid"];  
-      var carddata = { "nodeid" : nodeid, "defaultCurrency" : defaultCurrency, "exchangerate" : exchangerate, "chiapriceindefcurr" : chiapricedefcurr, "chia_overall_data" : chiaoveralldata};
+      var nodeid = data[key]["data"]["nodeid"];
+      var carddata = { "user_id" : userID, "sess_id" : sessid, "nodeid" : nodeid, "defaultCurrency" : defaultCurrency, "exchangerate" : exchangerate, "chiapriceindefcurr" : chiapricedefcurr, "chia_overall_data" : chiaoveralldata};
+           
       $.get(frontend + "/sites/chia_wallet/templates/cards.php", carddata, function(response) {
         $('#walletcontainer_' + nodeid).html(response);
         initRefreshWalletInfo();

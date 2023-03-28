@@ -12,7 +12,7 @@
    * The Chia_Wallet_Api class contains every needed methods to manage all available wallet data.
    * This class is used by the client to send in data and from the webclient to get data.
    * The client can also be managed via this class.
-   * @version 0.1.1
+   * @version 0.2.1
    * @author OLED1 - Oliver Edtmair
    * @since 0.1.0
    * @copyright Copyright (c) 2021, Oliver Edtmair (OLED1), Luca Austelat (lucaust)
@@ -64,8 +64,55 @@
      * @param  array  $loginData  {"authhash": "[Querying Node's authhash]"}
      * @return array              {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data": {"nodeid": [nodeid], "data": {[newly added wallet data]}}
      */
-    public function updateWalletData(array $data, array $loginData = NULL): array
+    public function updateWalletData(array $data, array $loginData = NULL): object
     {
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($data, $loginData){  
+        $node_id = Promise\resolve((new DB_Api())->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"]))));
+        $node_id->then(function($node_id_returned) use(&$resolve, $data, $loginData){
+          $nodeid = $node_id_returned->resultRows[0]["id"];
+          $db_promises = [];
+
+          foreach($data AS $walletid => $walletdata){
+            if(is_numeric($walletid) && is_array($walletdata)){
+              $wallet_count = Promise\resolve((new DB_Api())->execute("SELECT Count(*) as count FROM chia_wallets WHERE walletid = ? AND nodeid = ?", array($walletid, $nodeid)));
+              $wallet_count->then(function($wallet_count_returned) use(&$db_promises, $walletdata, $nodeid, $walletid){
+                $count = $wallet_count_returned->resultRows[0]["count"];
+                $formatted_data = new Walletdata($walletdata);
+                
+                if($count == 0){
+                  array_push($db_promises, Promise\resolve((new DB_Api())->execute("INSERT INTO chia_wallets (id, nodeid, walletid, walletaddress, walletheight, syncstatus, wallettype, totalbalance, pendingtotalbalance, spendable, querydate) VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp())",
+                                                            array($nodeid, $walletid, $formatted_data->get_address(), $formatted_data->get_height(), $formatted_data->get_syncstatus(), $formatted_data->get_type(), $formatted_data->get_confirmed_wallet_balance(), $formatted_data->get_unconfirmed_wallet_balance(), $formatted_data->get_spendable_balance()))));
+                }else{
+                  array_push($db_promises, Promise\resolve((new DB_Api())->execute("UPDATE chia_wallets SET  walletaddress = ?, walletheight = ?, syncstatus = ?, wallettype = ?, totalbalance = ?, pendingtotalbalance = ?, spendable = ?, querydate = current_timestamp() WHERE walletid = ? AND nodeid = ?",
+                                                            array($formatted_data->get_address(), $formatted_data->get_height(), $formatted_data->get_syncstatus(), $formatted_data->get_type(), $formatted_data->get_confirmed_wallet_balance(), $formatted_data->get_unconfirmed_wallet_balance(), $formatted_data->get_spendable_balance(), $walletid, $nodeid))));   
+                }
+              })->otherwise(function (\Exception $e) use(&$resolve){
+                $resolve($this->logging_api->getErrormessage("updateWalletData", "001", $e));
+              });
+            }else{
+              $resolve($this->logging_api->getErrormessage("updateWalletData", "002"));
+            }
+          }
+
+          Promise\all($db_promises)->then(function($db_promises_returned) use(&$resolve, $data, $loginData, $nodeid){
+            $new_wallet_data = Promise\resolve($this->getWalletData($data, $loginData, $nodeid));
+            $new_wallet_data->then(function($new_wallet_data_returned) use(&$resolve, $nodeid){
+              $resolve(array("status" => 0, "message" => "Successfully updated wallet information for node $nodeid.", "data" => ["nodeid" => $nodeid, "data" => $new_wallet_data_returned["data"]]));
+            });
+          })->otherwise(function (\Exception $e) use(&$resolve){
+            $resolve($this->logging_api->getErrormessage("updateWalletData", "003", $e));
+          });
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("updateWalletData", "004", $e));
+        });
+      };
+
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
+      
       try{
         $sql = $this->db_api->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"])));
         $nodeid = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/[0]["id"];

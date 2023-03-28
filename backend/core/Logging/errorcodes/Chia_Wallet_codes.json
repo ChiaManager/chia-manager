@@ -10,8 +10,10 @@
   },
   "errormessages" : {
     "updateWalletData" : {
-      "001" : [1, "Data not valid."],
-      "002" : [2, "An error occured."]
+      "001" : [2, "An error occured."],
+      "002" : [1, "Data not valid."],
+      "003" : [2, "An error occured."],
+      "004" : [2, "An error occured."]
     },
     "updateWalletTransactions" : {
       "001" : [2, "An error occured."]

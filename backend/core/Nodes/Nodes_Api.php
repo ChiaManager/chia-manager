@@ -671,13 +671,13 @@
             if(!array_key_exists(0, $nodes_up_status_returned) || $nodes_up_status_returned[0]["onlinestatus"] != $data["updown"]){
               $set_node_up = Promise\resolve((new DB_Api())->execute("INSERT INTO nodes_up_status (id, nodeid, onlinestatus, firstreported, lastreported) VALUES(NULL, ?, ?, current_timestamp(), current_timestamp())", array($data["nodeid"], $data["updown"])));
               $set_node_up->otherwise(function (\Exception $e) use(&$resolve){
-                return $resolve($this->logging_api->getErrormessage("setNodeUpDown", "003", $e));
+                $resolve($this->logging_api->getErrormessage("setNodeUpDown", "003", $e));
               });
             }
             if(count($nodes_up_status_returned) == 1){
               $update_node_laston = Promise\resolve((new DB_Api())->execute("UPDATE nodes_up_status SET lastreported = current_timestamp() WHERE id = ?", array($nodes_up_status_returned[0]["id"])));
               $update_node_laston->otherwise(function (\Exception $e) use(&$resolve){
-                return $resolve($this->logging_api->getErrormessage("setNodeUpDown", "004", $e));
+                $resolve($this->logging_api->getErrormessage("setNodeUpDown", "004", $e));
               });
             }
             
@@ -724,7 +724,7 @@
           }else if(!is_null($loginData) && array_key_exists("authhash", $loginData) && is_string($loginData["authhash"])){
             $nodeid = Promise\resolve((new DB_Api())->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"]))));
           }
-          
+         
           $nodeid->then(function($nodeid_returned) use(&$resolve, $data, $nodeid){
             if(!is_numeric($nodeid_returned)) $nodeid_returned = $nodeid_returned->resultRows[0]["id"];
 
@@ -739,9 +739,9 @@
                                                                       JOIN nodetypes_avail nta ON nta.code = nt.code
                                                                       WHERE nt.code IN (3,4,5) AND n.id = ?", array($nodeid_returned)));
 
-              $chia_nodes->then(function($chia_nodes_returned) use(&$resolve, $data, $nodeid){
+              $chia_nodes->then(function($chia_nodes_returned) use(&$resolve, $data, $nodeid_returned){
                 $chia_nodes_returned = $chia_nodes_returned->resultRows;
-                
+
                 if(count($chia_nodes_returned) > 0){
                   foreach($chia_nodes_returned AS $arrkey => $savedstates){
                     if(is_numeric($data[$savedstates["description"]])){
@@ -753,21 +753,28 @@
                     }
     
                     if((is_numeric($savedstates["servicestate"]) || is_null($savedstates["servicestate"])) && array_key_exists($savedstates["description"], $data) && (($reported_service_state != $savedstates["servicestate"]) || is_null($savedstates["servicestate"]))){
-                      $insert_service_state = Promise\resolve((new DB_Api())->execute("INSERT INTO nodes_services_status (id, nodeid, serviceid, servicestate, firstreported, lastreported) VALUES(NULL, ?, ?, ?, current_timestamp(), current_timestamp())", array($nodeid, $savedstates["serviceid"], $reported_service_state)));
+                      $insert_service_state = Promise\resolve((new DB_Api())->execute("INSERT INTO nodes_services_status (id, nodeid, serviceid, servicestate, firstreported, lastreported) VALUES(NULL, ?, ?, ?, current_timestamp(), current_timestamp())", array($nodeid_returned, $savedstates["serviceid"], $reported_service_state)));
                       $insert_service_state->otherwise(function(\Exception $e) use(&$resolve){
-                        return $resolve($this->logging_api->getErrormessage("updateChiaStatus", "006", $e));
+                        $resolve($this->logging_api->getErrormessage("updateChiaStatus", "006", $e));
                       });
                     }
                     if(is_numeric($savedstates["servicestate"])){
                       $update_lastreported = Promise\resolve((new DB_Api())->execute("UPDATE nodes_services_status SET lastreported = current_timestamp() WHERE id = ?", array($savedstates["curr_service_state_id"])));
                       $update_lastreported->otherwise(function(\Exception $e) use(&$resolve){
-                        return $resolve($this->logging_api->getErrormessage("updateChiaStatus", "007", $e));
+                        $resolve($this->logging_api->getErrormessage("updateChiaStatus", "007", $e));
                       });
                     }
                   }
-                }else{
-                  $resolve($this->logging_api->getErrormessage("updateChiaStatus", "001"));
-                }
+                }/*else{
+                  echo "updateChiaStatus: HIER ELSE? {$nodeid_returned}!!!!!!!!!!!!!!!!!!!!11\n";
+                  print_r($data);
+                  //$resolve($this->logging_api->getErrormessage("updateChiaStatus", "001"));
+                  $insert_service_state = Promise\resolve((new DB_Api())->execute("INSERT INTO nodes_services_status (id, nodeid, serviceid, servicestate, firstreported, lastreported) VALUES(NULL, ?, ?, ?, current_timestamp(), current_timestamp())", array($nodeid_returned, $savedstates["serviceid"], $reported_service_state)));
+                  $insert_service_state->otherwise(function(\Exception $e) use(&$resolve){
+                    //TODO Implement correct status code
+                    $resolve($this->logging_api->getErrormessage("updateChiaStatus", "006", $e));
+                  });
+                }*/
 
                 $set_current_nodes_states = Promise\resolve((new Chia_Infra_Sysinfo_Api())->setAllNodesSystemAndServicesUpStatus($data));
                 $set_current_nodes_states->then(function($set_current_nodes_states_returned) use(&$resolve){
