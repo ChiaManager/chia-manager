@@ -42,8 +42,12 @@
     else $chiapriceindefcurr = 0;
 
     $nodeid = $_GET["nodeid"];
+
+    //Cancel further execution, because this node seems not to have any data available
+    if(!array_key_exists("data", $all_wallet_data) || !array_key_exists($nodeid, $all_wallet_data["data"])) exit();
+
     $hostinfo = $all_wallet_data["data"][$nodeid]["hostinfo"];
-    $chia_overall_data = json_decode($_GET["chia_overall_data"], true);
+    $chia_overall_data = (gettype($_GET["chia_overall_data"]) == "string" ? json_decode($_GET["chia_overall_data"], true) : $_GET["chia_overall_data"]);
 
     if(count($walletdata) > 0){
       echo "<script nonce={$ini["nonce_key"]}>
