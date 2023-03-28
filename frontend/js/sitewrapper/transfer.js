@@ -45,6 +45,7 @@ function initWsclient(){
       sendToWSS("backendRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "loginStatus", {});
       if($.isFunction(window.messagesTrigger) && siteID !== undefined) window.messagesTrigger({"socketConnected" : { "status" : 0, "data" : true}});
       enableWSButtons();
+      heartbeat();
     };
 
     socket.onclose = function(msg){
@@ -74,6 +75,13 @@ function initWsclient(){
   }catch(ex){
     showMessage(2, ex);
   }
+}
+
+function heartbeat() {
+  if (!socket) return;
+  if (socket.readyState !== 1) return;
+  socket.send("heartbeat");
+  setTimeout(heartbeat, 5000);
 }
 
 function getNodeInfo(){
