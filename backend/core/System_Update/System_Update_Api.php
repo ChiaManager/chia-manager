@@ -48,6 +48,16 @@
      * @var WebSocketServer
      */
     private $server;
+    /**
+     * An array with all data which need to be returned to the requester.
+     * @var array
+     */
+    private $returnarray;
+    /**
+     * Holds an instance to the Encryption API Class.
+     * @var Encryption_Api;
+     */
+    private $encryption_api;
 
     /**
      * Initialises the needed and above stated private variables.
@@ -90,7 +100,7 @@
       };
 
       $canceller = function () {
-        throw new Exception('Promise cancelled');
+        throw new \Exception('Promise cancelled');
       };
 
       return new Promise\Promise($resolver, $canceller);
@@ -203,7 +213,7 @@
       };
 
       $canceller = function () {
-        throw new Exception('Promise cancelled');
+        throw new \Exception('Promise cancelled');
       };
 
       return new Promise\Promise($resolver, $canceller);
@@ -323,7 +333,7 @@
       };
 
       $canceller = function () {
-        throw new Exception('Promise cancelled');
+        throw new \Exception('Promise cancelled');
       };
 
       return new Promise\Promise($resolver, $canceller);
@@ -379,6 +389,7 @@
       $returndata["files-writeable"] = $this->checkFilesWritable();
 
       if(count($diff) > 0){
+        $modules_missing = "";
         foreach($diff AS $arrkey => $modulename){
           $modules_missing .= $modulename . " ";
         }
