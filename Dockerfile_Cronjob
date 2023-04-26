@@ -16,7 +16,6 @@ RUN docker-php-ext-enable apcu opcache
 # Use the .dockerignore file to control what ends up inside the image!
 WORKDIR /var/www/html
 COPY backend backend
-COPY docker/set_svc_ip_to_hosts.sh docker/set_svc_ip_to_hosts.sh
 COPY composer.json .
 COPY --from=composer:latest /usr/bin/composer /usr/local/bin/composer
 
@@ -36,7 +35,7 @@ ENV CM_DOCKER true
 RUN chown www-data. /var/www/html/backend/config -R
 
 # Execute websocket init script and start websocket server
-CMD ["sh","-c","/bin/sh docker/set_svc_ip_to_hosts.sh && php /var/www/html/backend/core/CronBackendService/CronBackendService.php"]
+CMD ["sh","-c","php /var/www/html/backend/core/CronBackendService/CronBackendService.php"]
 
 # Only for developing
 #ENTRYPOINT [ "sh","-c","/bin/sh docker/set_svc_ip_to_hosts.sh && tail -f /dev/null" ]
