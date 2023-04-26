@@ -40,6 +40,7 @@
     echo "<script nonce={$ini["nonce_key"]}> 
             var siteID = 7;
             chiaHarvesterData[{$_GET["nodeid"]}] = " .  json_encode((array_key_exists($_GET["nodeid"], $harvesterdata) ? $harvesterdata[$_GET["nodeid"]] : [])) . "; 
+            initAllDatatables();
           </script>";
 ?>
 <div class="row">
