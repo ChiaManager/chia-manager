@@ -5,6 +5,7 @@ $(function(){
 let socket;
 let alreadyreconnecting = false;
 var tasklist = [];
+var heartbeat_timeout;
 
 function initWsclient(){
   try{
@@ -57,6 +58,7 @@ function initWsclient(){
         setTimeout(function() { initWsclient();   alreadyreconnecting = false; }, 1000);
       }
       tasklist = {};
+      clearTimeout(heartbeat_timeout);
       toggleWSSLoading(tasklist);
       disableWSButtons();
     };
@@ -81,7 +83,7 @@ function heartbeat() {
   if (!socket) return;
   if (socket.readyState !== 1) return;
   socket.send("heartbeat");
-  setTimeout(heartbeat, 5000);
+  heartbeat_timeout = setTimeout(heartbeat, 20000);
 }
 
 function getNodeInfo(){
