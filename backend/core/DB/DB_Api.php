@@ -3,11 +3,6 @@
 
   use React\MySQL\Factory;
   use React\MySQL\QueryResult;
-  use React\Promise\Deferred;
-
-  /*ini_set('display_errors', 1);
-  ini_set('display_startup_errors', 1);
-  error_reporting(E_ALL);*/
 
   /**
    * The universal project db connector class.
