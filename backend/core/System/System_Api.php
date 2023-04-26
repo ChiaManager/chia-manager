@@ -219,7 +219,7 @@
      */
     public function testConnection(): object
     {
-      return (new WebSocket_Api())->testConnection();
+      return Promise\resolve((new WebSocket_Api())->testConnection());
     }
 
     /**
@@ -281,9 +281,11 @@
           $nodesupdatesavail = [];
           $chiaupdatesavail = [];
 
-          foreach($nodeupdates["updateinfos"] AS $arrkey => $nodeupdatedata){
-            if($nodeupdatedata["updateavailable"] < 0) array_push($nodesupdatesavail, $nodeupdatedata["hostname"]);
-            if($nodeupdatedata["chiaupdateavail"] < 0) array_push($chiaupdatesavail, $nodeupdatedata["hostname"]);
+          if(array_key_exists("updateinfos", $nodeupdates)){
+            foreach($nodeupdates["updateinfos"] AS $arrkey => $nodeupdatedata){
+              if($nodeupdatedata["updateavailable"] < 0) array_push($nodesupdatesavail, $nodeupdatedata["hostname"]);
+              if($nodeupdatedata["chiaupdateavail"] < 0) array_push($chiaupdatesavail, $nodeupdatedata["hostname"]);
+            }
           }
 
           if(count($nodesupdatesavail) > 0){
@@ -380,23 +382,23 @@
 
                   $this->system_update_api->checkAndAdjustDatabase();
                 }else{
-                  return $this->logging_api->getErrormessage("001");
+                  return $this->logging_api->getErrormessage("updateProjectVersion", "001");
                 }
               }else{
-                return $this->logging_api->getErrormessage("002");
+                return $this->logging_api->getErrormessage("updateProjectVersion", "002");
               }
             }else{
-              return $this->logging_api->getErrormessage("003");
+              return $this->logging_api->getErrormessage("updateProjectVersion", "003");
             }
             return array("status" => 0, "message" => "Successfully updated project version and set default values.");
           }else{
-            return $this->logging_api->getErrormessage("004");
+            return $this->logging_api->getErrormessage("updateProjectVersion", "004");
           }
         }else{
-          return $this->logging_api->getErrormessage("005");
+          return $this->logging_api->getErrormessage("updateProjectVersion", "005");
         }
       }else{
-        return $this->logging_api->getErrormessage("006");
+        return $this->logging_api->getErrormessage("updateProjectVersion", "006");
       }
     }
 
