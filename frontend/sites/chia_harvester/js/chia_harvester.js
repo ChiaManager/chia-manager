@@ -1,6 +1,5 @@
 initRefreshHarvesterInfos();
 initRestartHarvesterService();
-initAllDatatables();
 
 setTimeout(function(){
   setServiceBadge();
@@ -32,6 +31,7 @@ function initRefreshHarvesterInfos(){
   $(".refreshHarvesterInfo").on("click", function(e){
     e.preventDefault();
     queryHarvesterData($(this).attr("data-node-id"));
+    queryHarvesterStatus($(this).attr("data-node-id"));
   });
 }
 
@@ -67,7 +67,7 @@ function queryHarvesterStatus(nodeid){
     {"nodeid" : nodeid, "nodeauthhash" : chiaHarvesterData[nodeid]["nodeauthhash"]}
   ];
 
-  sendToWSS("ownRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "getCurrentChiaNodesUPAndServiceStatus", data);
+  sendToWSS("ownRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "queryNodesServicesStatus", data);
 }
 
 function setServiceBadge(){

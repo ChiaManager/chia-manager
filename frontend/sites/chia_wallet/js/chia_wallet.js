@@ -191,6 +191,7 @@ function initRefreshWalletInfo(){
     e.preventDefault();
     var nodeid = $(this).attr("data-node-id");
     queryWalletData(nodeid);
+    queryWalletStatus(nodeid);
   });
 }
 
@@ -215,7 +216,7 @@ function queryWalletStatus(nodeid){
     {"nodeid" : nodeid, "nodeauthhash" : chiaWalletData[nodeid][Object.keys(chiaWalletData[nodeid])]["nodeauthhash"]}
   ];
 
-  sendToWSS("backendRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "getCurrentChiaNodesUPAndServiceStatus", {});
+  sendToWSS("ownRequest", "ChiaMgmt\\Nodes\\Nodes_Api", "Nodes_Api", "queryNodesServicesStatus", data);
 }
 
 function setServiceBadge(){
