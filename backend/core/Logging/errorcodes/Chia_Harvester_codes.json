@@ -10,10 +10,14 @@
   },
   "errormessages" : {
     "updateHarvesterData" : {
-      "001" : [2, "An error occured."]
+      "001" : [2, "An error occured."],
+      "002" : [2, "An error occured."],
+      "003" : [2, "An error occured."]
     },
     "updateFoundPlots" : {
-      "001" : [2, "An error occured."]
+      "001" : [1, "CPD_ID could not be determined because there were no id returned or too much rows. Please take a look in the logs for details."],
+      "002" : [2, "An error occured."],
+      "003" : [2, "An error occured."]
     },
     "getFoundPlots" : {
       "001" : [2, "An error occured."]

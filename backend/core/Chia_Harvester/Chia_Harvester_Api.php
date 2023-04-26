@@ -12,7 +12,7 @@
    * The Chia_Harvester_Api class contains every needed methods to manage all available harvester data.
    * This class is used by the client to send in data and from the webclient to get data.
    * The client can also be managed via this class.
-   * @version 0.1.1
+   * @version 0.2.1
    * @author OLED1 - Oliver Edtmair
    * @since 0.1.0
    * @copyright Copyright (c) 2021, Oliver Edtmair (OLED1), Luca Austelat (lucaust)
@@ -70,53 +70,64 @@
      * @param  array  $loginData  {"authhash": "[Querying Node's authhash]"}
      * @return array              {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data": {"nodeid": [nodeid], "data": {[newly added harvester data]}}
      */
-    public function updateHarvesterData(array $data, array $loginData = NULL): array
+    public function updateHarvesterData(array $data, array $loginData = NULL): object
     {
-      try{
-        $sql = $this->db_api->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"])));
-        $nodeid = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/[0]["id"];
-        
-        $sql = $this->db_api->execute("SELECT id, nodeid, mountpoint, plotcount FROM chia_plots_directories WHERE nodeid = ?", array($nodeid));
-        $foundplottingdirectories = $sql/*->fetchAll(\PDO::FETCH_ASSOC)*/;
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($data, $loginData){  
+        $node_id = Promise\resolve((new DB_Api())->execute("SELECT id FROM nodes WHERE nodeauthhash = ? LIMIT 1", array($this->encryption_api->encryptString($loginData["authhash"]))));
+        $node_id->then(function($node_id_returned) use(&$resolve, $data, $loginData){
+          $nodeid = $node_id_returned->resultRows[0]["id"];
 
-        $stated_diff_array = [];
-        $db_saved_diff_array = [];
-        $insert_update_statements = "";
-        $insert_update_data = [];
+          $chia_mounts = Promise\resolve((new DB_Api())->execute("SELECT id, nodeid, mountpoint, plotcount FROM chia_plots_directories WHERE nodeid = ?", array($nodeid)));
+          $chia_mounts->then(function($chia_mounts_returned) use(&$resolve, $nodeid, $data){
+            $foundplottingdirectories = $chia_mounts_returned->resultRows;
 
-        //Creating the diff arrays to detect changes from database to newly reported data
-        foreach($data AS $finalmointpoint => $plots){
-          array_push($stated_diff_array, $finalmointpoint);  
-        }
-        foreach($foundplottingdirectories AS $arrkey => $plotdirdata){
-          array_push($db_saved_diff_array, $plotdirdata["mountpoint"]);
-        }
-        $stated_to_db_diff = array_diff($stated_diff_array, $db_saved_diff_array);
+            $stated_diff_array = [];
+            $db_saved_diff_array = [];
+            $insert_update_promises = [];
 
-        //Creating insert statement if new values are reported
-        foreach($stated_to_db_diff AS $arrkey => $mountpoint){
-          $insert_update_statements .= "INSERT INTO chia_plots_directories (id, nodeid, mountpoint, plotcount, firstreported, lastupdated, querydate) VALUES(NULL, ?, ?, ?, current_timestamp(), current_timestamp(), current_timestamp());";
-          array_push($insert_update_data, $nodeid, $mountpoint, count($data[$mountpoint]));
-        }
-        
-        //Updating not reported or renewed plot directories
-        foreach($foundplottingdirectories AS $arrkey => $plotdirdata){
-          $this_set_statement = "";
-          if(array_key_exists($plotdirdata["mountpoint"], $data)){
-            $this_set_statement = "plotcount = ?, lastupdated = current_timestamp(),";
-            array_push($insert_update_data, count($data[$plotdirdata["mountpoint"]]));
-          }
-          $insert_update_statements .= "UPDATE chia_plots_directories SET {$this_set_statement} querydate = current_timestamp() WHERE mountpoint = ? AND nodeid = ?;";
-          array_push($insert_update_data, $plotdirdata["mountpoint"], $nodeid);
-        }
-        
-        $sql = $this->db_api->execute($insert_update_statements, $insert_update_data);
-        $this->updateFoundPlots($data, $nodeid);
-        
-        return array("status" => 0, "message" => "Successfully updated farmer information for node $nodeid.", "data" => ["nodeid" => $nodeid]);
-      }catch(\Exception $e){
-        return $this->logging_api->getErrormessage("001", $e);
-      }
+            //Creating the diff arrays to detect changes from database to newly reported data
+            foreach($data AS $finalmointpoint => $plots){
+              array_push($stated_diff_array, $finalmointpoint);  
+            }
+            
+            foreach($foundplottingdirectories AS $arrkey => $plotdirdata){
+              array_push($db_saved_diff_array, $plotdirdata["mountpoint"]);
+            }
+
+            $stated_to_db_diff = array_diff($stated_diff_array, $db_saved_diff_array);
+
+            //Insert new values if there are some reported
+            foreach($stated_to_db_diff AS $arrkey => $mountpoint){
+              array_push($insert_update_promises, Promise\resolve((new DB_Api())->execute("INSERT INTO chia_plots_directories (id, nodeid, mountpoint, plotcount, firstreported, lastupdated, querydate) VALUES(NULL, ?, ?, ?, current_timestamp(), current_timestamp(), current_timestamp())", array($nodeid, $mountpoint, count($data[$mountpoint])))));
+            }
+
+            
+            //Updating not reported or renewed plot directories
+            foreach($foundplottingdirectories AS $arrkey => $plotdirdata){             
+              array_push($insert_update_promises, Promise\resolve((new DB_Api())->execute("UPDATE chia_plots_directories SET plotcount = ?, lastupdated = current_timestamp(), querydate = current_timestamp() WHERE mountpoint = ? AND nodeid = ?", array((array_key_exists($plotdirdata["mountpoint"], $data) ? count($data[$plotdirdata["mountpoint"]]) : 0), $plotdirdata["mountpoint"], $nodeid))));
+            }
+            
+            if(count($insert_update_promises) == 0) $insert_update_promises[0] = Promise\resolve("RESOLVED but empty.");
+
+            Promise\all($insert_update_promises)->then(function($insert_update_promises_returned) use(&$resolve, $data, $nodeid){
+              Promise\resolve($this->updateFoundPlots($data, $nodeid));
+              $resolve(array("status" => 0, "message" => "Successfully updated farmer information for node $nodeid.", "data" => ["nodeid" => $nodeid]));
+            })->otherwise(function (\Exception $e) use(&$resolve){
+              $resolve($this->logging_api->getErrormessage("updateHarvesterData", "001", $e));
+            });
+          })->otherwise(function (\Exception $e) use(&$resolve){
+            $resolve($this->logging_api->getErrormessage("updateHarvesterData", "002", $e));
+          });
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("updateHarvesterData", "003", $e));
+        });
+      };
+
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
     }
 
     /**
@@ -128,8 +139,51 @@
      * @param  int    $nodeid         The id of the node where the sent in data belongs.
      * @return array                  Returns a message array with an errorcode in case of an db error, otherwise nothing.
      */
-    private function updateFoundPlots(array $plotdata, int $nodeid): array
+    private function updateFoundPlots(array $plotdata, int $nodeid): object
     {
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($plotdata, $nodeid){ 
+        $plot_promises = [];
+
+        foreach($plotdata AS $mountpoint => $plotdata){
+          $plot_ids = Promise\resolve((new DB_Api())->execute("SELECT id FROM chia_plots_directories WHERE nodeid = ? AND mountpoint = ?", array($nodeid, $mountpoint)));
+          $plot_ids->then(function($plot_ids_returned) use(&$resolve, &$plot_promises, $plotdata, $mountpoint){
+            $cpd_id = $plot_ids_returned->resultRows;
+            if(count($cpd_id) == 1){
+              $cpd_id = $cpd_id[0]["id"];
+  
+              foreach($plotdata AS $arrkey => $thisplot){
+                $formatted_data = new Plots($thisplot);
+                array_push($plot_promises, Promise\resolve((new DB_Api())->execute("INSERT INTO chia_plots (id,cpd_id,file_size,filename,plot_seed,plot_id,plot_public_key,pool_contract_puzzle_hash,pool_public_key,size,time_modified,last_reported) 
+                                                                    VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp()) ON DUPLICATE KEY UPDATE last_reported = current_timestamp()
+                                                                  ", [
+                                                                  $cpd_id, $formatted_data->get_file_size(), $formatted_data->get_filename(), $formatted_data->get_plot_seed(), $formatted_data->get_plot_id(), 
+                                                                  $formatted_data->get_plot_public_key(), $formatted_data->get_pool_contract_puzzle_hash(), $formatted_data->get_pool_public_key(),
+                                                                  $formatted_data->get_k_size(), $formatted_data->get_time_modified()
+                                                                  ])));
+              }
+            }else{
+              Promise\resolve($this->logging_api->getErrormessage("updateFoundPlots", "001", "CPD_ID for mountpoint {$mountpoint} could not be determined because there were no id returned or too much rows. Expected 1 but got " . count($cpd_id) . "."));
+            }
+          })->otherwise(function (\Exception $e) use(&$resolve){
+            $resolve($this->logging_api->getErrormessage("updateFoundPlots", "002", $e));
+          });
+        }
+
+        if(count($plot_promises) == 0) $plot_promises[0] = Promise\resolve("RESOLVED but empty.");
+
+        Promise\all($plot_promises)->then(function($plot_promises_returned) use(&$resolve){
+          $resolve(array("status" => 0, "message" => "Successfully updated found plots"));
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("updateFoundPlots", "003", $e));
+        });
+      };
+
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
+      
       try{
         foreach($plotdata AS $mountpoint => $plotdata){
           $sql = $this->db_api->execute("SELECT id FROM chia_plots_directories WHERE nodeid = ? AND mountpoint = ?", array($nodeid, $mountpoint));
