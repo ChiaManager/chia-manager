@@ -487,61 +487,142 @@
     }
 
     /**
-     * Checks if there is an update available for a node.
+     * Checks if there is an update available for a node. Cashes all remote version into the database and updates it if new data available.
      * Function made for: Web client
      * @throws Exception $e                    Throws an exception on db errors.
      * @param  array  $data                    { "nodeid" : ["A specific nodes id"] }
      * @param  array $loginData                { NULL } No loginData needed to query this function.
-     * @return array                           {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data" => ["Requested infos - array"]}
+     * @return object                          {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data" => ["Requested infos - array"]}
      */
     public function checkUpdatesAndChannels(array $data = []): object
     {
       $resolver = function (callable $resolve, callable $reject, callable $notify) use($data){
-        $updatepackagepath = "https://files.chiamgmt.edtmair.at/client/versions.json";
+        $last_query_time = Promise\resolve((new DB_Api())->execute("SELECT last_querytime  FROM node_updates ORDER BY last_querytime DESC LIMIT 1;", array()));
+        $last_query_time->then(function($last_query_time_returned) use(&$resolve, $data){     
+          $last_query_time_returned = $last_query_time_returned->resultRows;
+          $insert_update = false;
 
-        $browser = new Browser();
-        $client_updates = $browser->get($updatepackagepath)->then(
-          function ($client_updates_returned){
-            return json_decode($client_updates_returned->getBody(), true);
-          },
-          function (\Exception $e) use(&$resolve){
-            return $resolve($this->logging_api->getErrormessage("checkUpdatesAndChannels", "001", $e));
+          if(count($last_query_time_returned) == 0 ||
+            (array_key_exists(0, $last_query_time_returned) && array_key_exists("last_querytime", $last_query_time_returned[0]) && strtotime($last_query_time_returned[0]["last_querytime"])+600 < time())
+          ){
+            $insert_update = true;
           }
-        );
 
-        $overall_chia_data = Promise\resolve($this->chia_overall_api->getOverallChiaData());
+          if($insert_update){
+            $updatepackagepath = "https://api.github.com/repos/ChiaManager/chia-manager-client/releases";
+            $load_data_promises = [
+              Promise\resolve((new DB_Api())->execute("SELECT id, gh_id, channel, remoteversion, releasenotes, zipball, available_since FROM node_updates ORDER BY remoteversion DESC;", array())),
+              (new Browser())->get($updatepackagepath)
+            ];
+           
+            Promise\all($load_data_promises)->then(function($load_data_promises_returned) use(&$resolve, &$data){
+              $local_versions = $load_data_promises_returned[0]->resultRows;
+              $remote_versions = (array_key_exists(1, $load_data_promises_returned) ? json_decode($load_data_promises_returned[1]->getBody(), true) : []);
+              $local_versions_formatted = [];
+
+              if(count($local_versions) > 0){
+                foreach($local_versions AS $arrkey => $local_releaseinfo){
+                  $local_versions_formatted[$local_releaseinfo["gh_id"]] = $local_releaseinfo;
+                }
+              }
+
+              if(count($remote_versions) > 0){
+                $insert_data_promises = [];
+
+                foreach($remote_versions AS $arrkey => $remote_releaseinfo){
+                  if(array_key_exists("name", $remote_releaseinfo) && !array_key_exists($remote_releaseinfo["id"], $local_versions_formatted)){
+                    array_push($insert_data_promises, Promise\resolve((new DB_Api())->execute("INSERT INTO node_updates (id, gh_id, channel, remoteversion, releasenotes, zipball, available_since, last_querytime) VALUES (NULL, ?, ?, ?, ?, ?, NOW(), NOW())", array($remote_releaseinfo["id"], $remote_releaseinfo["target_commitish"], $remote_releaseinfo["name"], $remote_releaseinfo["body"], $remote_releaseinfo["zipball_url"]))));
+                  }else{
+                    array_push($insert_data_promises, Promise\resolve((new DB_Api())->execute("UPDATE node_updates SET last_querytime = NOW() WHERE gh_id = ?", array($remote_releaseinfo["id"]))));
+                  }
+                }
+
+                Promise\all($insert_data_promises)->then(function($insert_data_promises_returned) use(&$resolve, $data){
+                  $resolve(Promise\resolve($this->getUpdatesAndChannels($data)));
+                })->otherwise(function (\Exception $e) use(&$resolve){
+                  $resolve($this->logging_api->getErrormessage("checkUpdatesAndChannels", "001", $e));
+                });
+              }else{
+                $resolve($this->logging_api->getErrormessage("checkUpdatesAndChannels", "002"));
+              }
+            })->otherwise(function (\Exception $e) use(&$resolve){
+              $resolve($this->logging_api->getErrormessage("checkUpdatesAndChannels", "003", $e));
+            });
+          }else{
+            $resolve(Promise\resolve($this->getUpdatesAndChannels($data)));
+          }
+        })->otherwise(function (\Exception $e) use(&$resolve){
+          $resolve($this->logging_api->getErrormessage("checkUpdatesAndChannels", "004", $e));
+        });
+      };
+
+      $canceller = function () {
+        throw new \Exception('Promise cancelled');
+      };
+
+      return new Promise\Promise($resolver, $canceller);
+    }
+
+    /**
+     * Checks if there is an update available for a node using the current cached information on the database. Returns node specific information or for all nodes.
+     * Function made for: Web client
+     * @throws Exception $e                    Throws an exception on db errors.
+     * @param  array  $data                    { "nodeid" : ["A specific nodes id"] or NULL }
+     * @param  array $loginData                { NULL } No loginData needed to query this function.
+     * @return object                          {"status": [0|>0], "message": "[Success-/Warning-/Errormessage]", "data" => ["Requested infos - array"]}
+     */
+    public function getUpdatesAndChannels(array $data): object
+    {
+      $resolver = function (callable $resolve, callable $reject, callable $notify) use($data){
+        $current_data = [
+          Promise\resolve((new DB_Api())->execute("SELECT id, gh_id, channel, remoteversion, releasenotes, zipball, available_since FROM node_updates ORDER BY remoteversion DESC;", array())),
+          Promise\resolve($this->chia_overall_api->getOverallChiaData())
+        ];
 
         if(array_key_exists("nodeid", $data) && is_numeric($data["nodeid"])){
-          $node_data = Promise\resolve((new DB_Api())->execute("SELECT id, hostname, scriptversion, updatechannel, chiaversion FROM nodes WHERE authtype = 2 AND id = ?", array($data["nodeid"])));
+          array_push($current_data, Promise\resolve((new DB_Api())->execute("SELECT id, hostname, scriptversion, updatechannel, chiaversion FROM nodes WHERE authtype = 2 AND id = ?", array($data["nodeid"]))));
         }else{
-          $node_data = Promise\resolve((new DB_Api())->execute("SELECT id, hostname, scriptversion, updatechannel, chiaversion FROM nodes WHERE authtype = 2", array()));
+          array_push($current_data, Promise\resolve((new DB_Api())->execute("SELECT id, hostname, scriptversion, updatechannel, chiaversion FROM nodes WHERE authtype = 2", array())));
         }
-        
-        Promise\all([$client_updates, $overall_chia_data, $node_data])->then(function($all_returned) use(&$resolve){
-          $version_file_data = $all_returned[0];
+
+        Promise\all($current_data)->then(function($all_returned) use(&$resolve){       
+          $version_file_data = $all_returned[0]->resultRows;
           $overall_chia_data = $all_returned[1];
           $node_data = $all_returned[2]->resultRows;
-
+          
           $returndata = [];
+          $returndata["available_channels"] = [];
+          $version_info_formatted = [];
+          foreach($version_file_data AS $arrkey => $version_info){
+            if(!array_key_exists($version_info["channel"], $version_info_formatted)) $version_info_formatted[$version_info["channel"]] = [];
+            if(!array_key_exists($version_info["remoteversion"], $version_info_formatted[$version_info["channel"]])) $version_info_formatted[$version_info["channel"]][$version_info["remoteversion"]] = $version_info;
+            ksort($version_info_formatted[$version_info["channel"]]);
+
+            if(!in_array($version_info["channel"], $returndata["available_channels"], true)){
+              array_push($returndata["available_channels"], $version_info["channel"]);
+            }
+          }
+
           $returndata["updateinfos"] = [];
           foreach($node_data AS $arrkey => $nodedata){
             $returndata["updateinfos"][$nodedata["id"]] = $nodedata;
-
             $returndata["updateinfos"][$nodedata["id"]]["updateavailable"] =  2;
-            if(array_key_exists($nodedata["updatechannel"], $version_file_data)){
-              if(!is_null($nodedata["scriptversion"])) $returndata["updateinfos"][$nodedata["id"]]["updateavailable"] = (int)version_compare($nodedata["scriptversion"], $version_file_data[$nodedata["updatechannel"]][array_key_first($version_file_data[$nodedata["updatechannel"]])]);
-              $returndata["updateinfos"][$nodedata["id"]]["remoteversion"] = $version_file_data[$nodedata["updatechannel"]][array_key_first($version_file_data[$nodedata["updatechannel"]])];
-            }
-  
             $returndata["updateinfos"][$nodedata["id"]]["chiaupdateavail"] =  2;
+
+            if(array_key_exists($nodedata["updatechannel"], $version_info_formatted)){
+              if(!is_null($nodedata["scriptversion"])) $returndata["updateinfos"][$nodedata["id"]]["updateavailable"] = (int)version_compare($nodedata["scriptversion"], array_key_first($version_info_formatted[$nodedata["updatechannel"]]));
+              $returndata["updateinfos"][$nodedata["id"]]["remoteversion"] = array_key_first($version_info_formatted[$nodedata["updatechannel"]]);
+            }
+
             if(array_key_exists("data", $overall_chia_data) && array_key_exists("blockchain_version", $overall_chia_data["data"])){
               if(!is_null($nodedata["chiaversion"]) && !empty($nodedata["chiaversion"])) $returndata["updateinfos"][$nodedata["id"]]["chiaupdateavail"] = (int)version_compare(trim($nodedata["chiaversion"]), trim($overall_chia_data["data"]["blockchain_version"]));
+              $returndata["updateinfos"][$nodedata["id"]]["remotechiaversion"] = trim($overall_chia_data["data"]["blockchain_version"]);
             }
           }
 
           $resolve(array("status" => 0, "message" => "Successfully loaded all requested data.", "data" => $returndata));
         })->otherwise(function (\Exception $e) use(&$resolve){
-          $resolve($this->logging_api->getErrormessage("checkUpdatesAndChannels", "002", $e));
+          $resolve($this->logging_api->getErrormessage("getUpdatesAndChannels", "001", $e));
         });
       };
 
@@ -566,7 +647,7 @@
         if(array_key_exists("branch", $data) && array_key_exists("nodeid", $data)){
           $allowedbranches = array("dev","staging","main");
           if(in_array($data["branch"], $allowedbranches)){
-            $set_updatechannel = Promise\resole((new DB_Api())->execute("UPDATE nodes SET updatechannel = ? WHERE id = ?", array($data["branch"],$data["nodeid"])));
+            $set_updatechannel = Promise\resolve((new DB_Api())->execute("UPDATE nodes SET updatechannel = ? WHERE id = ?", array($data["branch"],$data["nodeid"])));
             $set_updatechannel->then(function($set_updatechannel_returned) use(&$resolve, $data){
               $resolve(array("status" => 0, "message" => "Successfully updated branch for node {$data["nodeid"]} to {$data["branch"]}.", "data" => ["branch" => $data["branch"], "nodeid" => $data["nodeid"]]));
             })->otherwise(function(\Exception $e) use(&$resolve){

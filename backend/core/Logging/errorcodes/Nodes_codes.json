@@ -15,7 +15,8 @@
     "updateNodeBranch" : "013",
     "setNodeUpDown" : "014",
     "updateChiaStatus" : "015",
-    "getCurrentChiaNodesUPAndServiceStatus" : "016"
+    "getCurrentChiaNodesUPAndServiceStatus" : "016",
+    "getUpdatesAndChannels" : "017"
   },
   "errormessages" : {
     "getConfiguredNodes" : {
@@ -65,7 +66,9 @@
     },
     "checkUpdatesAndChannels" : {
       "001" : [2, "An error occured."],
-      "002" : [2, "An error occured."]
+      "002" : [2, "WE did not got any information from github... Please try again in some minutes."],
+      "003" : [2, "An error occured."],
+      "004" : [2, "An error occured."]
     },
     "updateNodeBranch" : {
       "001" : [2, "An error occured."],
@@ -88,6 +91,9 @@
       "007" : [2, "An error occured."]
     },
     "getCurrentChiaNodesUPAndServiceStatus" : {
+      "001" : [2, "An error occured."]
+    },
+    "getUpdatesAndChannels" : {
       "001" : [2, "An error occured."]
     }
   }

@@ -1,17 +1,18 @@
 <?php
   use ChiaMgmt\Login\Login_Api;
-  use ChiaMgmt\Chia_Overall\Chia_Overall_Api;
-  use ChiaMgmt\Exchangerates\Exchangerates_Api;
   use ChiaMgmt\System\System_Api;
   require __DIR__ . '/../../../../vendor/autoload.php';
 
-  if(!array_key_exists("sess_id", $_GET) || ! array_key_exists("user_id", $_GET)){
+  if(!(array_key_exists("sess_id", $_GET) || array_key_exists("PHPSESSID", $_COOKIE)) || !(!array_key_exists("user_id", $_GET) || !array_key_exists("user_id", $_COOKIE))){
     echo "Incomplete Request.";
     die();
   }
 
-  $check_login = React\Promise\resolve((new Login_Api())->checklogin($_GET["sess_id"], $_GET["user_id"]));
-  $system_messages = React\Promise\resolve((new System_Api())->getSystemMessages(["userID" => $_GET["user_id"]]));
+  $sess_id = (array_key_exists("sess_id", $_GET) ? $_GET["sess_id"] : $_COOKIE["PHPSESSID"]);
+  $user_id = (array_key_exists("user_id", $_GET) ? $_GET["user_id"] : $_COOKIE["user_id"]);
+
+  $check_login = React\Promise\resolve((new Login_Api())->checklogin($sess_id, $user_id));
+  $system_messages = React\Promise\resolve((new System_Api())->getSystemMessages(["userID" => $user_id]));
 
   $ini = parse_ini_file(__DIR__.'/../../../../backend/config/config.ini.php');
 
@@ -70,4 +71,6 @@
     </div>
   </div>
 </div>
-<?php }); ?>
+<?php 
+  });
+?>

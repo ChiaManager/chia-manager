@@ -399,22 +399,23 @@
                   <button class="btn btn-secondary dropdown-toggle" type="button" id="updatechannelsMenu" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"></button>
                   <label for="updatechannelsMenu">Update Channel</label>
                   <div id="updatechannels-modal" class="dropdown-menu" aria-labelledby="updatechannelsMenu">
-                    <?php foreach($scriptupdatesavail["available_channels"] AS $arrkey => $channelname){
-                      echo "<button class='dropdown-item scriptbranchoption wsbutton' data-branch='{$channelname}' href='#'>" . getFullNameFromBranch($channelname) . "</button>";
-                    }
-
-                    function getFullNameFromBranch($channelname){
-                      switch ($channelname){
-                        case "dev":
-                          return "Development";
-                        case "staging":
-                          return "Staging";
-                        case "main":
-                          return "Productive";
-                        default:
-                          return "Not set";
+                    <?php 
+                      function getFullNameFromBranch($channelname){
+                        switch ($channelname){
+                          case "dev":
+                            return "Development";
+                          case "staging":
+                            return "Staging";
+                          case "main":
+                            return "Productive";
+                          default:
+                            return "Not set";
+                        }
                       }
-                    }
+
+                      foreach($scriptupdatesavail["available_channels"] AS $arrkey => $channelname){
+                        echo "<button class='dropdown-item scriptbranchoption wsbutton' data-branch='{$channelname}' href='#'>" . getFullNameFromBranch($channelname) . "</button>";
+                      }
                     ?>
                   </div>
                 </div>
